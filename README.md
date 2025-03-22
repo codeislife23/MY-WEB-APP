@@ -1,106 +1,76 @@
-# Audio Separator Frontend
+# Audio Separator
 
-A modern React web application that provides a user-friendly interface for the [python-audio-separator](https://github.com/nomadkaraoke/python-audio-separator) package, allowing you to separate audio tracks into vocals and instrumentals.
+A modern web application for separating audio tracks into individual stems (vocals, drums, bass, etc.) using machine learning models.
 
 ## Features
 
-- Upload audio files in common formats (MP3, WAV, FLAC, OGG, M4A)
-- Select from available separation models
-- Download separated audio tracks (vocals and instrumentals)
-- Simple and intuitive user interface
+- **Multi-Stem Separation**: Split audio into vocals, drums, bass, and other instruments
+- **Format Conversion**: Download stems in multiple formats (WAV, MP3, FLAC, AAC)
+- **Audio Preview**: Listen to separated stems directly in the browser
+- **Modern UI**: Clean, intuitive interface with visual feedback
+- **Progress Tracking**: Real-time progress monitoring during separation
 
-## Prerequisites
+## Technology Stack
 
-Before you can use this application, you need to:
+- **Frontend**: React.js
+- **Backend**: Python Flask
+- **Audio Processing**: Various ML models for audio separation
 
-1. Install Python 3.10 or newer
-2. Install the audio-separator package
-3. Have Node.js and npm installed
+## Getting Started
 
-## Installation Instructions
+### Prerequisites
 
-### Step 1: Install Python Dependencies
+- Node.js (v14+)
+- Python 3.8+
+- FFmpeg (for audio conversion)
 
-First, install the audio-separator package. You have several options depending on your hardware:
+### Installation
 
-#### CPU Version (any computer):
+1. Clone the repository:
+   ```
+   git clone https://github.com/codeislife23/MY-WEB-APP.git
+   cd MY-WEB-APP
+   ```
 
-```bash
-pip install "audio-separator[cpu]"
-```
+2. Install backend dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
 
-#### GPU Version (if you have an NVIDIA GPU with CUDA):
+3. Install frontend dependencies:
+   ```
+   npm install
+   ```
 
-```bash
-pip install "audio-separator[gpu]"
-```
+### Running the Application
 
-#### Using Conda:
+1. Start the Flask backend:
+   ```
+   python server.py
+   ```
 
-```bash
-conda install audio-separator -c pytorch -c conda-forge
-```
+2. In a separate terminal, start the React frontend:
+   ```
+   npm start
+   ```
 
-### Step 2: Install Flask Backend Dependencies
+3. Open your browser and navigate to:
+   ```
+   http://localhost:3000
+   ```
 
-Install the required Python packages for the backend server:
+## Usage
 
-```bash
-pip install flask flask-cors
-```
+1. Select an audio separation model from the dropdown
+2. Choose the separation type (vocals/instruments or multi-stem)
+3. Upload an audio file (MP3, WAV, FLAC, etc.)
+4. Click "Separate Audio" and wait for processing to complete
+5. Preview the separated stems using the built-in audio player
+6. Download individual stems in your preferred format
 
-### Step 3: Install Frontend Dependencies
+## Screenshot
 
-Install the Node.js dependencies:
-
-```bash
-npm install
-```
-
-## Running the Application
-
-You need to run both the backend Flask server and the frontend React app:
-
-### Step 1: Start the Backend Server
-
-```bash
-python server.py
-```
-
-This will start the Flask server on port 5000.
-
-### Step 2: Start the Frontend
-
-In a new terminal window:
-
-```bash
-npm start
-```
-
-This will start the React development server, and your browser should automatically open to http://localhost:3000.
-
-## How to Use
-
-1. Ensure both the backend server and frontend are running
-2. Upload an audio file (MP3, WAV, FLAC, OGG, or M4A format)
-3. Select a separation model from the dropdown
-4. Click "Separate Audio" to process the file
-5. Once processing is complete, download the separated tracks
-
-## Troubleshooting
-
-### Backend Server Issues
-
-- Make sure Python 3.10+ is installed
-- Verify audio-separator is installed correctly by running `audio-separator --version`
-- Check that Flask and flask-cors are installed
-- Make sure no other service is using port 5000
-
-### Frontend Issues
-
-- Ensure Node.js and npm are installed
-- Check that all dependencies were installed correctly with `npm install`
-- Make sure the backend server is running
+![Audio Separator Screenshot](screenshot.png)
 
 ## License
 
@@ -108,5 +78,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Acknowledgements
 
-- [python-audio-separator](https://github.com/nomadkaraoke/python-audio-separator) - The core audio separation library
-- [Ultimate Vocal Remover (UVR)](https://github.com/Anjok07/ultimatevocalremovergui) - Source of the models used for separation
+- Audio separation models from various sources
+- React Dropzone for file uploads
+- FFmpeg for audio conversion
