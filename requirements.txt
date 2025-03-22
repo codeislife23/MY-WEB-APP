@@ -1,0 +1,4 @@
+flask==2.3.2
+flask-cors==3.0.10
+audio-separator[cpu]
+werkzeug==2.3.6 
