@@ -20,6 +20,11 @@ A modern web application for separating audio tracks into individual stems (voca
 
 ### Prerequisites
 
+- **Supported Operating Systems**:
+  - Linux (Ubuntu, Debian, CentOS, etc.)
+  - macOS (10.15 Catalina or newer)
+  - Windows 10/11 with WSL2 (Windows Subsystem for Linux) or Git Bash
+
 - Node.js (v14+)
 - Python 3.8+
 - FFmpeg (for audio conversion)
