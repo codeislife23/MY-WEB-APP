@@ -99,46 +99,6 @@ const AudioSeparator = () => {
     checkDependencies();
   }, []);
 
-  // Fetch available models
-  useEffect(() => {
-    const fetchModels = async () => {
-      try {
-        console.log("Attempting to fetch models from /api/models...");
-        const response = await fetch('/api/models');
-        console.log("Response received:", response);
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        console.log("Data received:", data);
-        
-        if (data.error) {
-          setError(data.error);
-          console.error("Error in response:", data.error);
-        } else if (data.models && data.models.length > 0) {
-          console.log("Models found:", data.models);
-          setModels(data.models);
-          setSelectedModel(data.models[0]);
-        } else {
-          console.log("No models found in response");
-          setError("No models were found. Make sure audio-separator is installed correctly.");
-        }
-      } catch (error) {
-        console.error('Error fetching models:', error);
-        setError('Failed to fetch available models. Please check your server connection.');
-        
-        // Let's try to use a default model if we can't fetch the list
-        console.log("Setting default model as fallback");
-        setModels(['UVR-MDX-NET-Inst_HQ_3.onnx']);
-        setSelectedModel('UVR-MDX-NET-Inst_HQ_3.onnx');
-      }
-    };
-
-    fetchModels();
-  }, []);
-
   // Clean up progress interval on unmount
   useEffect(() => {
     return () => {
@@ -147,6 +107,95 @@ const AudioSeparator = () => {
       }
     };
   }, [progressInterval]);
+
+  // Function to fetch models from the API
+  const fetchModelsFromAPI = async (forceRefresh = false) => {
+    try {
+      console.log("Fetching models from API", forceRefresh ? "(force refresh)" : "");
+      const url = forceRefresh ? '/api/models?force_refresh=true' : '/api/models';
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log("Models received from API:", data);
+      
+      if (data.error) {
+        throw new Error(data.error);
+      } else if (data.models && data.models.length > 0) {
+        // Cache the models in localStorage with timestamp
+        localStorage.setItem('cached_models', JSON.stringify({
+          models: data.models,
+          timestamp: Date.now()
+        }));
+        
+        setModels(data.models);
+        if (!selectedModel) {
+          setSelectedModel(data.models[0]);
+        }
+        return data.models;
+      } else {
+        throw new Error("No models were found");
+      }
+    } catch (error) {
+      console.error('Error fetching models from API:', error);
+      throw error;
+    }
+  };
+
+  // Fetch available models, with caching
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        // First try to load from localStorage
+        const cachedData = localStorage.getItem('cached_models');
+        
+        if (cachedData) {
+          const { models: cachedModels, timestamp } = JSON.parse(cachedData);
+          const cacheAge = Date.now() - timestamp;
+          const cacheExpiry = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+          
+          // If we have a valid cache, use it first
+          if (cachedModels && cachedModels.length > 0 && cacheAge < cacheExpiry) {
+            console.log("Using cached models from localStorage");
+            setModels(cachedModels);
+            setSelectedModel(cachedModels[0]);
+            
+            // Fetch in the background to update cache if it's older than 1 hour
+            if (cacheAge > 60 * 60 * 1000) {
+              console.log("Cache is older than 1 hour, updating in background");
+              fetchModelsFromAPI(true).catch(error => {
+                console.log("Background cache update failed, will use cache", error);
+              });
+            }
+            return;
+          }
+        }
+        
+        // If no cache or expired cache, fetch from API
+        await fetchModelsFromAPI();
+      } catch (error) {
+        console.error('Error loading models:', error);
+        setError('Failed to fetch available models. Please check your server connection.');
+        
+        // Let's try to use a default model if we can't fetch the list
+        console.log("Setting default model as fallback");
+        const defaultModels = ['UVR-MDX-NET-Inst_HQ_3.onnx'];
+        setModels(defaultModels);
+        setSelectedModel(defaultModels[0]);
+        
+        // Save these defaults in cache too
+        localStorage.setItem('cached_models', JSON.stringify({
+          models: defaultModels,
+          timestamp: Date.now()
+        }));
+      }
+    };
+
+    loadModels();
+  }, []);
 
   // Function to poll for progress updates
   const startProgressPolling = (id) => {

@@ -22,9 +22,67 @@ ALLOWED_EXTENSIONS = {'mp3', 'wav', 'ogg', 'flac', 'm4a'}
 # Dictionary to store progress information
 progress_data = {}
 
+# Cache for model names
+cached_models = []
+
 # Create folders if they don't exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+
+def preload_models():
+    """Preload the list of available models on server startup"""
+    global cached_models
+    try:
+        print("Preloading model list...")
+        result = subprocess.run(['audio-separator', '--list_models'], 
+                              capture_output=True, text=True, check=True)
+        
+        # Parse the output to extract model names
+        models = []
+        lines = result.stdout.split('\n')
+        for line in lines:
+            if line.strip() and not line.startswith('Available models'):
+                # Extract just the model filename - these usually end with .onnx, .ckpt, .pt, or .pth
+                # Look for the first word or phrase that ends with a model extension
+                parts = line.split()
+                model_name = None
+                for part in parts:
+                    part = part.strip()
+                    if part.endswith(('.onnx', '.ckpt', '.pt', '.pth', '.yaml')):
+                        model_name = part
+                        break
+                
+                # If we couldn't find a part with a model extension, try the first part before a space
+                if not model_name and len(parts) > 0:
+                    model_name = parts[0].strip()
+                
+                if model_name:
+                    models.append(model_name)
+        
+        if not models:
+            print("No models found during preloading, using default models")
+            # Provide some default models that are commonly available
+            models = [
+                'UVR-MDX-NET-Inst_HQ_3.onnx',
+                'UVR_MDXNET_KARA_2.onnx',
+                'Kim_Vocal_2.onnx',
+                'UVR-MDX-NET-Inst_3.onnx'
+            ]
+        
+        cached_models = models
+        print(f"Preloaded {len(cached_models)} models")
+    except Exception as e:
+        print(f"Error preloading models: {str(e)}")
+        # Set some default models as a fallback
+        cached_models = [
+            'UVR-MDX-NET-Inst_HQ_3.onnx',
+            'UVR_MDXNET_KARA_2.onnx'
+        ]
+    
+    return cached_models
+
+# Preload models on startup
+preload_models()
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -72,61 +130,30 @@ def check_ffmpeg():
 
 @app.route('/api/models', methods=['GET'])
 def get_models():
-    """Get available models by running audio-separator --list_models"""
-    try:
-        print("Attempting to run audio-separator --list_models")
-        result = subprocess.run(['audio-separator', '--list_models'], 
-                              capture_output=True, text=True, check=True)
-        
-        print(f"Command output: {result.stdout}")
-        
-        # Parse the output to extract model names
-        models = []
-        lines = result.stdout.split('\n')
-        for line in lines:
-            if line.strip() and not line.startswith('Available models'):
-                # Extract just the model filename - these usually end with .onnx, .ckpt, .pt, or .pth
-                # Look for the first word or phrase that ends with a model extension
-                parts = line.split()
-                model_name = None
-                for part in parts:
-                    part = part.strip()
-                    if part.endswith(('.onnx', '.ckpt', '.pt', '.pth', '.yaml')):
-                        model_name = part
-                        break
-                
-                # If we couldn't find a part with a model extension, try the first part before a space
-                if not model_name and len(parts) > 0:
-                    model_name = parts[0].strip()
-                
-                if model_name:
-                    models.append(model_name)
-        
-        if not models:
-            print("No models found in the output, using default models")
-            # Provide some default models that are commonly available
-            models = [
-                'UVR-MDX-NET-Inst_HQ_3.onnx',
-                'UVR_MDXNET_KARA_2.onnx',
-                'Kim_Vocal_2.onnx',
-                'UVR-MDX-NET-Inst_3.onnx'
-            ]
-        
-        print(f"Returning models: {models}")
-        return jsonify({'models': models})
-    except subprocess.CalledProcessError as e:
-        print(f"Error running audio-separator --list_models: {e}")
-        print(f"stderr: {e.stderr}")
-        # Return some default models if the command fails
-        default_models = [
-            'UVR-MDX-NET-Inst_HQ_3.onnx',
-            'UVR_MDXNET_KARA_2.onnx'
-        ]
-        return jsonify({'models': default_models, 'note': 'Using default models due to error'})
-    except Exception as e:
-        print(f"Unexpected error in get_models: {str(e)}")
-        # Return a single default model as a fallback
-        return jsonify({'models': ['UVR-MDX-NET-Inst_HQ_3.onnx'], 'note': 'Using default model due to error'})
+    """Get available models, using the cached list for faster responses"""
+    global cached_models
+    
+    # If we don't have cached models or force_refresh=true is in query params, fetch them
+    force_refresh = request.args.get('force_refresh', 'false').lower() == 'true'
+    
+    if force_refresh or not cached_models:
+        # Refresh the cache
+        try:
+            print("Refreshing model cache...")
+            models = preload_models()
+            return jsonify({'models': models, 'cached': False})
+        except Exception as e:
+            print(f"Error refreshing model cache: {str(e)}")
+            if not cached_models:
+                # If we have no cached models and failed to fetch, use default models
+                default_models = [
+                    'UVR-MDX-NET-Inst_HQ_3.onnx',
+                    'UVR_MDXNET_KARA_2.onnx'
+                ]
+                return jsonify({'models': default_models, 'note': 'Using default models due to error', 'cached': False})
+    
+    # Return cached models
+    return jsonify({'models': cached_models, 'cached': True})
 
 def process_audio_in_thread(job_id, filepath, model, job_dir, result_queue):
     """Process audio in a separate thread and track progress"""
@@ -568,4 +595,10 @@ def check_installation():
     }), 200
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000) 
+    # Preload models before starting the server
+    print("Starting server with preloaded models...")
+    models = preload_models()
+    print(f"Server has {len(models)} models preloaded and ready")
+    
+    # Start the Flask app
+    app.run(debug=True, host='0.0.0.0') 
