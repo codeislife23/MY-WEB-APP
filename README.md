@@ -44,6 +44,32 @@ A modern web application for separating audio tracks into individual stems (voca
 
 ### Running the Application
 
+You can run the application using our convenient bash scripts or manually:
+
+#### Using Bash Scripts (Recommended)
+
+1. Start the entire application (both backend and frontend) with a single command:
+   ```
+   ./start-app.sh
+   ```
+   This script will:
+   - Check for required dependencies
+   - Set up the Python virtual environment
+   - Install all dependencies
+   - Start the Flask backend server
+   - Start the React frontend
+   - Provide access URLs
+
+2. To stop the application:
+   ```
+   ./stop-app.sh
+   ```
+   This script will gracefully shut down both the frontend and backend servers.
+
+#### Manual Startup
+
+Alternatively, you can start the components manually:
+
 1. Start the Flask backend:
    ```
    python server.py
