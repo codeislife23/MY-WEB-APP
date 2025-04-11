@@ -16,6 +16,7 @@ const AudioSeparator = () => {
   const [playingStemName, setPlayingStemName] = useState(null);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [stemType, setStemType] = useState('multi_stem');
+  const [selectedFormat, setSelectedFormat] = useState('mp3');
   const audioPlayerRef = useRef(null);
 
   // Use static model configuration
@@ -525,6 +526,20 @@ const AudioSeparator = () => {
                 <p className="player-instruction">{playingStemName || "Select a stem to preview"}</p>
               </div>
               
+              <div className="format-selector">
+                <label htmlFor="formatSelect">Download Format:</label>
+                <select 
+                  id="formatSelect" 
+                  value={selectedFormat} 
+                  onChange={(e) => setSelectedFormat(e.target.value)}
+                >
+                  <option value="mp3">MP3</option>
+                  <option value="wav">WAV</option>
+                  <option value="flac">FLAC</option>
+                  <option value="aac">AAC</option>
+                </select>
+              </div>
+              
               <div className="stems-list">
                 {Object.entries(stems).map(([stemType, files]) => {
                   if (files.length === 0) return null;
@@ -563,7 +578,7 @@ const AudioSeparator = () => {
                           </button>
                           <button 
                             className="download-action"
-                            onClick={() => downloadFile(baseUrl, `${originalFileName}-${stemType}.mp3`, 'mp3')}
+                            onClick={() => downloadFile(baseUrl, `${originalFileName}-${stemType}.${selectedFormat}`, selectedFormat)}
                             aria-label="Download stem"
                           >
                             <span className="download-icon">⬇️</span>
