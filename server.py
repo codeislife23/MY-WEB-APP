@@ -10,6 +10,10 @@ import json
 import threading
 import queue
 from werkzeug.utils import secure_filename
+import argparse
+import io
+import select
+import fcntl
 
 app = Flask(__name__)
 CORS(app)
@@ -34,50 +38,13 @@ def preload_models():
     global cached_models
     try:
         print("Preloading model list...")
-        result = subprocess.run(['audio-separator', '--list_models'], 
-                              capture_output=True, text=True, check=True)
-        
-        # Parse the output to extract model names
-        models = []
-        lines = result.stdout.split('\n')
-        for line in lines:
-            if line.strip() and not line.startswith('Available models'):
-                # Extract just the model filename - these usually end with .onnx, .ckpt, .pt, or .pth
-                # Look for the first word or phrase that ends with a model extension
-                parts = line.split()
-                model_name = None
-                for part in parts:
-                    part = part.strip()
-                    if part.endswith(('.onnx', '.ckpt', '.pt', '.pth', '.yaml')):
-                        model_name = part
-                        break
-                
-                # If we couldn't find a part with a model extension, try the first part before a space
-                if not model_name and len(parts) > 0:
-                    model_name = parts[0].strip()
-                
-                if model_name:
-                    models.append(model_name)
-        
-        if not models:
-            print("No models found during preloading, using default models")
-            # Provide some default models that are commonly available
-            models = [
-                'UVR-MDX-NET-Inst_HQ_3.onnx',
-                'UVR_MDXNET_KARA_2.onnx',
-                'Kim_Vocal_2.onnx',
-                'UVR-MDX-NET-Inst_3.onnx'
-            ]
-        
-        cached_models = models
+        # Only return htdemucs_ft model
+        cached_models = ['htdemucs_ft.yaml']
         print(f"Preloaded {len(cached_models)} models")
     except Exception as e:
         print(f"Error preloading models: {str(e)}")
-        # Set some default models as a fallback
-        cached_models = [
-            'UVR-MDX-NET-Inst_HQ_3.onnx',
-            'UVR_MDXNET_KARA_2.onnx'
-        ]
+        # Set htdemucs_ft as fallback
+        cached_models = ['htdemucs_ft.yaml']
     
     return cached_models
 
@@ -166,7 +133,7 @@ def process_audio_in_thread(job_id, filepath, model, job_dir, result_queue):
         # Update progress to 10% - File uploaded and processing started
         progress_data[job_id] = {
             'progress': 10,
-            'status': 'Processing started',
+            'status': 'Preparing audio file for processing...',
             'complete': False,
             'error': None
         }
@@ -208,53 +175,154 @@ def process_audio_in_thread(job_id, filepath, model, job_dir, result_queue):
         
         # Update progress to 20% - Separation process started
         progress_data[job_id]['progress'] = 20
-        progress_data[job_id]['status'] = 'Separation process started'
+        progress_data[job_id]['status'] = 'Initializing audio separation...'
         
         # Read output line by line to estimate progress
         start_time = time.time()
         output_lines = []
         error_lines = []
         
-        # Read stdout and stderr
-        for line in process.stdout:
-            output_lines.append(line)
+        # Create non-blocking readers for stdout and stderr
+
+        # Make stdout and stderr non-blocking
+        for pipe in [process.stdout, process.stderr]:
+            fd = pipe.fileno()
+            fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+            fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+
+        # Set up polling object to monitor both pipes
+        poll = select.poll()
+        poll.register(process.stdout, select.POLLIN)
+        poll.register(process.stderr, select.POLLIN)
+
+        active_pipes = 2  # stdout and stderr
+        last_progress_update = time.time()
+
+        while active_pipes > 0 and process.poll() is None:
+            # Check available data every 0.5 seconds
+            for fd, event in poll.poll(500):
+                # Data to read
+                if event & select.POLLIN:
+                    if fd == process.stdout.fileno():
+                        try:
+                            line = process.stdout.readline()
+                            if line:
+                                output_lines.append(line)
+                                print(f"Stdout: {line.strip()}")
+                                
+                                # Look for progress indicators in the output
+                                if "Loading model" in line or "load model" in line.lower():
+                                    progress_data[job_id]['status'] = 'Loading audio separation model...'
+                                elif "Processing" in line or "separating" in line.lower():
+                                    progress_data[job_id]['status'] = 'Processing audio tracks...'
+                                elif "Saving" in line or "writing" in line.lower() or "output" in line.lower():
+                                    progress_data[job_id]['status'] = 'Saving separated tracks...'
+                                elif "Converting" in line or "convert" in line.lower():
+                                    progress_data[job_id]['status'] = 'Converting audio format...'
+                                elif "Enhancing" in line or "enhance" in line.lower() or "filter" in line.lower():
+                                    progress_data[job_id]['status'] = 'Enhancing audio quality...'
+                            else:
+                                poll.unregister(process.stdout)
+                                active_pipes -= 1
+                        except Exception as e:
+                            print(f"Error reading stdout: {e}")
+                    
+                    elif fd == process.stderr.fileno():
+                        try:
+                            line = process.stderr.readline()
+                            if line:
+                                error_lines.append(line)
+                                print(f"Stderr: {line.strip()}")
+                            else:
+                                poll.unregister(process.stderr)
+                                active_pipes -= 1
+                        except Exception as e:
+                            print(f"Error reading stderr: {e}")
+                
+                # Handle errors
+                elif event & (select.POLLERR | select.POLLHUP):
+                    if fd == process.stdout.fileno():
+                        poll.unregister(process.stdout)
+                        active_pipes -= 1
+                    elif fd == process.stderr.fileno():
+                        poll.unregister(process.stderr)
+                        active_pipes -= 1
             
-            # Update progress based on time passed and typical processing time
-            elapsed_time = time.time() - start_time
-            # Estimate progress: 20% at start, up to 90% based on elapsed time
-            # Most separations take 30-120 seconds, so we'll use a simple formula
-            # that reaches 90% after about 60 seconds
-            estimated_progress = min(20 + (elapsed_time / 60) * 70, 90)
-            
-            progress_data[job_id]['progress'] = int(estimated_progress)
-            progress_data[job_id]['status'] = 'Processing audio...'
-            
-            # Look for progress indicators in the output
-            if "Loading model" in line:
-                progress_data[job_id]['status'] = 'Loading model...'
-            elif "Processing" in line:
-                progress_data[job_id]['status'] = 'Processing audio...'
-            elif "Saving" in line:
-                progress_data[job_id]['status'] = 'Saving separated tracks...'
+            # Update progress at most once per second based on elapsed time
+            current_time = time.time()
+            if current_time - last_progress_update >= 1.0:
+                elapsed_time = current_time - start_time
+                # Estimate progress: 20% at start, up to 90% based on elapsed time
+                # Use a better estimation curve to prevent getting stuck
+                if elapsed_time < 10:
+                    # First 10 seconds: move from 20% to 30%
+                    estimated_progress = 20 + (elapsed_time / 10) * 10
+                    status_message = 'Loading audio models...'
+                elif elapsed_time < 30:
+                    # Next 20 seconds: move from 30% to 60%
+                    estimated_progress = 30 + ((elapsed_time - 10) / 20) * 30
+                    status_message = 'Processing audio tracks...'
+                else:
+                    # Beyond 30 seconds: move from 60% to 90%
+                    estimated_progress = 60 + min((elapsed_time - 30) / 30, 1) * 30
+                    if estimated_progress < 75:
+                        status_message = 'Applying advanced separation algorithms...'
+                    else:
+                        status_message = 'Finalizing separated tracks...'
+                
+                # Ensure progress is always moving forward
+                current_progress = progress_data[job_id]['progress']
+                if estimated_progress > current_progress:
+                    progress_data[job_id]['progress'] = int(estimated_progress)
+                    
+                # Update status message if no specific message from output
+                if progress_data[job_id]['status'] == 'Initializing audio separation...' or progress_data[job_id]['status'] == 'Processing audio...':
+                    progress_data[job_id]['status'] = status_message
+                    
+                last_progress_update = current_time
         
-        # Get any remaining stderr
-        for line in process.stderr:
-            error_lines.append(line)
+        # Read any remaining output
+        try:
+            remaining_stdout, remaining_stderr = process.communicate(timeout=10)
+            if remaining_stdout:
+                output_lines.append(remaining_stdout)
+            if remaining_stderr:
+                error_lines.append(remaining_stderr)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            remaining_stdout, remaining_stderr = process.communicate()
+            if remaining_stdout:
+                output_lines.append(remaining_stdout)
+            if remaining_stderr:
+                error_lines.append(remaining_stderr)
         
         # Wait for the process to complete
-        process.wait()
+        exit_code = process.wait()
         
         # Check if process was successful
-        if process.returncode == 0:
+        if exit_code == 0:
             # Get output files
             output_files = []
             for f in os.listdir(job_dir):
                 if os.path.isfile(os.path.join(job_dir, f)):
-                    output_files.append(f)
+                    # Remove "htdemucs_ft" from the filename if present
+                    clean_filename = f.replace("htdemucs_ft_", "").replace("_htdemucs_ft", "")
+                    clean_filename = clean_filename.replace("htdemucs_ft.", ".")
+                    clean_filename = clean_filename.replace("htdemucs_ft", "")
+                    
+                    # If the filename changed, rename the file
+                    if clean_filename != f:
+                        os.rename(
+                            os.path.join(job_dir, f),
+                            os.path.join(job_dir, clean_filename)
+                        )
+                        output_files.append(clean_filename)
+                    else:
+                        output_files.append(f)
             
             # Update progress to 100% - Complete
             progress_data[job_id]['progress'] = 100
-            progress_data[job_id]['status'] = 'Complete'
+            progress_data[job_id]['status'] = 'Separation completed successfully!'
             progress_data[job_id]['complete'] = True
             
             print(f"Separation complete. Output files: {output_files}")
@@ -271,14 +339,14 @@ def process_audio_in_thread(job_id, filepath, model, job_dir, result_queue):
             
             # Update progress with error
             progress_data[job_id]['progress'] = 0
-            progress_data[job_id]['status'] = 'Error'
+            progress_data[job_id]['status'] = 'Error: Separation process failed. Please check logs for details.'
             progress_data[job_id]['error'] = error_message
             progress_data[job_id]['complete'] = True
             
             result_queue.put({
                 'job_id': job_id,
                 'success': False,
-                'error': f"Error during separation: return code {process.returncode}",
+                'error': f"Error during separation: return code {exit_code}",
                 'stderr': error_message
             })
     except Exception as e:
@@ -286,7 +354,7 @@ def process_audio_in_thread(job_id, filepath, model, job_dir, result_queue):
         
         # Update progress with error
         progress_data[job_id]['progress'] = 0
-        progress_data[job_id]['status'] = 'Error'
+        progress_data[job_id]['status'] = 'Error: Unexpected issue occurred during processing.'
         progress_data[job_id]['error'] = str(e)
         progress_data[job_id]['complete'] = True
         
@@ -332,8 +400,8 @@ def separate_audio():
             'error': None
         }
         
-        # Get parameters
-        model = request.form.get('model', 'UVR-MDX-NET-Inst_HQ_3.onnx')  # Default model
+        # Get parameters - default to htdemucs_ft.yaml
+        model = request.form.get('model', 'htdemucs_ft.yaml')
         
         # Create a queue for the thread to return results
         result_queue = queue.Queue()
@@ -451,6 +519,11 @@ def download_file(job_id, filename):
         for marker in ['(Vocals)', '(Instrumental)', '(Drums)', '(Bass)', '(Other)']:
             clean_name = clean_name.replace(marker, '')
             
+        # Remove "htdemucs_ft" from the filename if present
+        clean_name = clean_name.replace("htdemucs_ft_", "").replace("_htdemucs_ft", "")
+        clean_name = clean_name.replace("htdemucs_ft.", ".")
+        clean_name = clean_name.replace("htdemucs_ft", "")
+        
         # Remove the extension from clean_name to avoid duplicating it
         if '.' in clean_name:
             clean_name = clean_name.rsplit('.', 1)[0]
@@ -595,10 +668,15 @@ def check_installation():
     }), 200
 
 if __name__ == '__main__':
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Audio Separator Flask Server')
+    parser.add_argument('--port', type=int, default=5000, help='Port to run the server on')
+    args = parser.parse_args()
+    
     # Preload models before starting the server
-    print("Starting server with preloaded models...")
+    print(f"Starting server on port {args.port} with preloaded models...")
     models = preload_models()
     print(f"Server has {len(models)} models preloaded and ready")
     
     # Start the Flask app
-    app.run(debug=True, host='0.0.0.0') 
+    app.run(debug=True, host='0.0.0.0', port=args.port) 

@@ -34,15 +34,30 @@ function App() {
       <div className="min-h-screen bg-zinc-950 text-white">
         <div className="App">
           <header className="App-header">
-            <h1 className="text-3xl font-bold text-white">Audio Separator</h1>
-            <p className="text-zinc-400">Separate your audio into instrumental and vocals</p>
+            <div className="glow-orb"></div>
+            <h1>Audio Separator Studio</h1>
+            <p className="subtitle">Advanced AI-powered stem separation technology</p>
+            <div className="header-stats">
+              <div className="stat-item">
+                <span className="stat-value">99.8%</span>
+                <span className="stat-label">Accuracy</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">4</span>
+                <span className="stat-label">Stem Types</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">24-bit</span>
+                <span className="stat-label">Quality</span>
+              </div>
+            </div>
           </header>
           
-          <main className="App-main bg-zinc-900 shadow-lg border border-zinc-800">
+          <main className="App-main">
             {isLoading ? (
-              <div className="flex flex-col items-center justify-center py-10">
-                <div className="w-10 h-10 border-2 border-red-500 border-t-transparent rounded-full animate-spin"></div>
-                <p className="mt-4 text-zinc-400">Checking installation status...</p>
+              <div className="loader-container">
+                <div className="loader"></div>
+                <p className="loader-text">Initializing system components...</p>
               </div>
             ) : isInstalled ? (
               <AudioSeparator />
@@ -52,9 +67,16 @@ function App() {
           </main>
           
           <footer className="App-footer">
-            <p className="text-zinc-500">
-              Powered by <a href="https://github.com/nomadkaraoke/python-audio-separator" target="_blank" rel="noopener noreferrer" className="text-red-500 hover:text-red-400">python-audio-separator</a>
-            </p>
+            <div className="footer-content">
+              <p>
+                Powered by <a href="https://github.com/nomadkaraoke/python-audio-separator" target="_blank" rel="noopener noreferrer">python-audio-separator</a>
+              </p>
+              <div className="footer-links">
+                <a href="#">Documentation</a>
+                <a href="#">Support</a>
+                <a href="#">GitHub</a>
+              </div>
+            </div>
           </footer>
         </div>
       </div>

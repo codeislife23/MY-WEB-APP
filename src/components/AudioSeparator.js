@@ -2,9 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 
 const AudioSeparator = () => {
-  const [models, setModels] = useState([]);
-  const [selectedModel, setSelectedModel] = useState('');
-  const [stemType, setStemType] = useState('vocals_instruments');
   const [file, setFile] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
@@ -18,7 +15,11 @@ const AudioSeparator = () => {
   const [playingStemUrl, setPlayingStemUrl] = useState(null);
   const [playingStemName, setPlayingStemName] = useState(null);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const [stemType, setStemType] = useState('multi_stem');
   const audioPlayerRef = useRef(null);
+
+  // Use static model configuration
+  const selectedModel = 'htdemucs_ft.yaml';
 
   // Object to define model capabilities - which stems a model can produce
   const modelCapabilities = {
@@ -107,95 +108,6 @@ const AudioSeparator = () => {
       }
     };
   }, [progressInterval]);
-
-  // Function to fetch models from the API
-  const fetchModelsFromAPI = async (forceRefresh = false) => {
-    try {
-      console.log("Fetching models from API", forceRefresh ? "(force refresh)" : "");
-      const url = forceRefresh ? '/api/models?force_refresh=true' : '/api/models';
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      console.log("Models received from API:", data);
-      
-      if (data.error) {
-        throw new Error(data.error);
-      } else if (data.models && data.models.length > 0) {
-        // Cache the models in localStorage with timestamp
-        localStorage.setItem('cached_models', JSON.stringify({
-          models: data.models,
-          timestamp: Date.now()
-        }));
-        
-        setModels(data.models);
-        if (!selectedModel) {
-          setSelectedModel(data.models[0]);
-        }
-        return data.models;
-      } else {
-        throw new Error("No models were found");
-      }
-    } catch (error) {
-      console.error('Error fetching models from API:', error);
-      throw error;
-    }
-  };
-
-  // Fetch available models, with caching
-  useEffect(() => {
-    const loadModels = async () => {
-      try {
-        // First try to load from localStorage
-        const cachedData = localStorage.getItem('cached_models');
-        
-        if (cachedData) {
-          const { models: cachedModels, timestamp } = JSON.parse(cachedData);
-          const cacheAge = Date.now() - timestamp;
-          const cacheExpiry = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-          
-          // If we have a valid cache, use it first
-          if (cachedModels && cachedModels.length > 0 && cacheAge < cacheExpiry) {
-            console.log("Using cached models from localStorage");
-            setModels(cachedModels);
-            setSelectedModel(cachedModels[0]);
-            
-            // Fetch in the background to update cache if it's older than 1 hour
-            if (cacheAge > 60 * 60 * 1000) {
-              console.log("Cache is older than 1 hour, updating in background");
-              fetchModelsFromAPI(true).catch(error => {
-                console.log("Background cache update failed, will use cache", error);
-              });
-            }
-            return;
-          }
-        }
-        
-        // If no cache or expired cache, fetch from API
-        await fetchModelsFromAPI();
-      } catch (error) {
-        console.error('Error loading models:', error);
-        setError('Failed to fetch available models. Please check your server connection.');
-        
-        // Let's try to use a default model if we can't fetch the list
-        console.log("Setting default model as fallback");
-        const defaultModels = ['UVR-MDX-NET-Inst_HQ_3.onnx'];
-        setModels(defaultModels);
-        setSelectedModel(defaultModels[0]);
-        
-        // Save these defaults in cache too
-        localStorage.setItem('cached_models', JSON.stringify({
-          models: defaultModels,
-          timestamp: Date.now()
-        }));
-      }
-    };
-
-    loadModels();
-  }, []);
 
   // Function to poll for progress updates
   const startProgressPolling = (id) => {
@@ -678,29 +590,44 @@ const AudioSeparator = () => {
   };
 
   return (
-    <div>
+    <div className="audio-separator-container">
       {!results ? (
         <>
-          <form onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label htmlFor="modelSelect">Select Model:</label>
-              <select
-                id="modelSelect"
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                required
-              >
-                <option value="">Select a model...</option>
-                {models.map((model, index) => (
-                  <option key={index} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </select>
+          <div className="feature-banner">
+            <div className="feature-item">
+              <div className="feature-icon">🎵</div>
+              <div className="feature-text">
+                <h3>AI-Powered Separation</h3>
+                <p>Advanced neural networks isolate audio components with precision</p>
+              </div>
             </div>
+            <div className="feature-item">
+              <div className="feature-icon">⚡</div>
+              <div className="feature-text">
+                <h3>High-Speed Processing</h3>
+                <p>Optimized algorithms deliver results in seconds</p>
+              </div>
+            </div>
+            <div className="feature-item">
+              <div className="feature-icon">🔊</div>
+              <div className="feature-text">
+                <h3>Studio-Quality Output</h3>
+                <p>Crystal clear stems ready for production</p>
+              </div>
+            </div>
+          </div>
 
+          <form onSubmit={handleSubmit} className="separation-form">
+            <div className="form-header">
+              <h2>Audio Separation Workbench</h2>
+              <p>Transform your music into isolated components</p>
+            </div>
+            
             <div className="form-group">
-              <label htmlFor="stemTypeSelect">Separation Type:</label>
+              <label htmlFor="stemTypeSelect">
+                <span className="label-text">Separation Type</span>
+                <span className="label-hint">Select your preferred separation mode</span>
+              </label>
               <select
                 id="stemTypeSelect"
                 value={stemType}
@@ -712,10 +639,30 @@ const AudioSeparator = () => {
               </select>
             </div>
 
-            {renderDropzone()}
+            <div className="form-group">
+              <label>
+                <span className="label-text">Audio Input</span>
+                <span className="label-hint">Upload your audio file (MP3, WAV, FLAC)</span>
+              </label>
+              {renderDropzone()}
+            </div>
 
-            <button type="submit" disabled={!file || isProcessing}>
-              {isProcessing ? "Processing..." : "Separate Audio"}
+            <button 
+              type="submit" 
+              disabled={!file || isProcessing}
+              className="cta-button"
+            >
+              {isProcessing ? (
+                <>
+                  <span className="button-icon processing"></span>
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <span className="button-icon"></span>
+                  Separate Audio
+                </>
+              )}
             </button>
           </form>
 
